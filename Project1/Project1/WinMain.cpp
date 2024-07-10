@@ -19,6 +19,7 @@
 #include <system_error>
 #include <iomanip>
 #include <sstream>
+#include <numeric>
 #include "tinyxml2.h"
 #include "resource.h"
 
@@ -281,88 +282,95 @@ std::string wstring_to_utf8(const std::wstring& wstr) {
 }
 
 void updateProjectFile(const std::wstring& projectDirectory, const std::wstring& projectName, const std::vector<FileInfo>& files) {
-	fs::path projectPath = fs::path(projectDirectory) / (projectName + L".vcxproj");
-	std::wstring projectFileName = projectPath.wstring();
+	fs::path projectPath = fs::path(projectDirectory) / (std::wstring(projectName) + L".vcxproj");
+	fs::path backupPath = projectPath.parent_path() / (projectPath.stem().wstring() + L"_backup.vcxproj");
 
-	// ファイルの存在確認
-	if (!fs::exists(projectFileName)) {
-		throw std::runtime_error("Project file does not exist: " + wstring_to_utf8(projectFileName));
-	}
+	try {
+		// プロジェクトファイルのバックアップを作成
+		fs::copy_file(projectPath, backupPath, fs::copy_options::overwrite_existing);
 
-	// ファイルの読み取り権限確認
-	std::error_code ec;
-	fs::file_status status = fs::status(projectFileName, ec);
-	if (ec) {
-		throw std::runtime_error("Failed to get file status: " + ec.message());
-	}
-	if ((status.permissions() & fs::perms::owner_read) == fs::perms::none) {
-		throw std::runtime_error("No read permission for project file: " + wstring_to_utf8(projectFileName));
-	}
+		// プロジェクトファイルを読み込む
+		std::wifstream inFile(projectPath);
+		if (!inFile) {
+			throw std::runtime_error("Failed to open project file for reading");
+		}
 
-	tinyxml2::XMLDocument doc;
+		std::vector<std::wstring> lines;
+		std::wstring line;
+		while (std::getline(inFile, line)) {
+			lines.push_back(line);
+		}
+		inFile.close();
 
-	// ワイド文字列をUTF-8に変換
-	std::string utf8FileName = wstring_to_utf8(projectFileName);
+		// 既存のファイルエントリを確認
+		std::map<std::wstring, std::pair<std::wstring, size_t>> existingFiles; // <ファイル名, <アイテムタイプ, 行番号>>
+		std::wregex fileRegex(L"<(ClCompile|ClInclude)\\s+Include=\"([^\"]+)\"");
 
-	tinyxml2::XMLError eResult = doc.LoadFile(utf8FileName.c_str());
-	if (eResult != tinyxml2::XML_SUCCESS) {
-		throw std::runtime_error("Failed to load project file: " + std::string(doc.ErrorStr()));
-	}
-
-	tinyxml2::XMLElement* projectElement = doc.FirstChildElement("Project");
-	if (!projectElement) {
-		throw std::runtime_error("Invalid project file structure");
-	}
-
-	// 既存のファイルを収集
-	std::set<std::string> existingFiles;
-	for (tinyxml2::XMLElement* itemGroup = projectElement->FirstChildElement("ItemGroup");
-		itemGroup;
-		itemGroup = itemGroup->NextSiblingElement("ItemGroup")) {
-		for (tinyxml2::XMLElement* item = itemGroup->FirstChildElement();
-			item;
-			item = item->NextSiblingElement()) {
-			const char* include = item->Attribute("Include");
-			if (include) {
-				existingFiles.insert(include);
+		for (size_t i = 0; i < lines.size(); ++i) {
+			std::wsmatch fileMatch;
+			if (std::regex_search(lines[i], fileMatch, fileRegex)) {
+				std::wstring itemType = fileMatch[1].str();
+				std::wstring fileName = fileMatch[2].str();
+				existingFiles[fileName] = std::make_pair(itemType, i);
 			}
 		}
-	}
 
-	// 新しいファイルを追加
-	tinyxml2::XMLElement* newItemGroup = nullptr;
-	for (const auto& file : files) {
-		std::string fileName = ws2s(file.name);
-		if (existingFiles.find(fileName) == existingFiles.end()) {
-			if (!newItemGroup) {
-				newItemGroup = doc.NewElement("ItemGroup");
-				projectElement->InsertEndChild(newItemGroup);
-			}
+		// 新しいファイルエントリを準備
+		std::vector<std::wstring> newEntries;
+		for (const auto& file : files) {
+			std::wstring normalizedPath = file.name;
+			std::replace(normalizedPath.begin(), normalizedPath.end(), L'/', L'\\');
 
-			std::wstring ext = fs::path(file.name).extension().wstring();
+			std::wstring ext = fs::path(normalizedPath).extension().wstring();
 			std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
-			tinyxml2::XMLElement* newItem = nullptr;
-			if (ext == L".cpp" || ext == L".c") {
-				newItem = doc.NewElement("ClCompile");
-			}
-			else if (ext == L".h" || ext == L".hpp") {
-				newItem = doc.NewElement("ClInclude");
-			}
+			std::wstring itemType = (ext == L".cpp" || ext == L".c") ? L"ClCompile" : L"ClInclude";
 
-			if (newItem) {
-				newItem->SetAttribute("Include", fileName.c_str());
-				newItemGroup->InsertEndChild(newItem);
+			auto it = existingFiles.find(normalizedPath);
+			if (it == existingFiles.end() || it->second.first != itemType) {
+				std::wstring newEntry = L"    <" + itemType + L" Include=\"" + normalizedPath + L"\" />";
+				newEntries.push_back(newEntry);
 			}
 		}
+
+		// 新しいエントリを適切な位置に挿入
+		if (!newEntries.empty()) {
+			auto insertPos = std::find_if(lines.rbegin(), lines.rend(), [](const std::wstring& l) {
+				return l.find(L"</ItemGroup>") != std::wstring::npos;
+				});
+
+			if (insertPos != lines.rend()) {
+				size_t insertIndex = lines.size() - (insertPos - lines.rbegin()) - 1;
+				lines.insert(lines.begin() + insertIndex, newEntries.begin(), newEntries.end());
+			}
+			else {
+				// ItemGroupが見つからない場合、ファイルの最後に新しいItemGroupを追加
+				lines.push_back(L"  <ItemGroup>");
+				lines.insert(lines.end(), newEntries.begin(), newEntries.end());
+				lines.push_back(L"  </ItemGroup>");
+			}
+		}
+
+		// 更新されたコンテンツを書き込む
+		std::wofstream outFile(projectPath);
+		if (!outFile) {
+			throw std::runtime_error("Failed to open project file for writing");
+		}
+		for (const auto& line : lines) {
+			outFile << line << L"\n";
+		}
+		outFile.close();
+
+		// バックアップを削除
+		fs::remove(backupPath);
 	}
-
-	// 変更があった場合のみファイルを保存
-	if (newItemGroup) {
-		eResult = doc.SaveFile(ws2s(projectFileName).c_str());
-		if (eResult != tinyxml2::XML_SUCCESS) {
-			throw std::runtime_error("Failed to save project file");
+	catch (const std::exception& e) {
+		// エラーが発生した場合、バックアップから復元
+		if (fs::exists(backupPath)) {
+			fs::copy_file(backupPath, projectPath, fs::copy_options::overwrite_existing);
+			fs::remove(backupPath);
 		}
+		throw std::runtime_error(std::string("Error in updateProjectFile: ") + e.what());
 	}
 }
 
@@ -636,7 +644,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 				auto files = getProjectFiles(directoryPath);
 				try {
 					generateFiltersFile(directoryPath, projectName, files);
-					//updateProjectFile(directoryPath, projectName, files);
+					updateProjectFile(directoryPath, projectName, files);
 					SetWindowText(hWndStatusText, L"Filters generated and project file updated successfully.");
 				}
 				catch (const std::exception& e) {
