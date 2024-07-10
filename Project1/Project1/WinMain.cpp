@@ -113,7 +113,6 @@ std::wstring xmlEscape(const std::wstring& input) {
 		case L'>':  escaped += L"&gt;"; break;
 		case L'"':  escaped += L"&quot;"; break;
 		case L'\'': escaped += L"&apos;"; break;
-		case L'/':  escaped += L"&#x2F;"; break;
 		default:    escaped += ch; break;
 		}
 	}
@@ -137,9 +136,12 @@ void generateFiltersFile(const std::wstring& projectDirectory, const std::wstrin
 		// フィルター（ディレクトリ）の階層構造を構築
 		std::map<std::wstring, std::wstring> filterHierarchy;
 		for (const auto& file : files) {
-			fs::path filePath(file.name);
+			std::wstring filePath = file.name;
+			std::replace(filePath.begin(), filePath.end(), L'/', L'\\');  // '/' を '\' に置換
+
+			fs::path fsFilePath(filePath);
 			std::wstring currentPath;
-			for (const auto& part : filePath.parent_path()) {
+			for (const auto& part : fsFilePath.parent_path()) {
 				if (!currentPath.empty()) {
 					std::wstring parentPath = currentPath;
 					currentPath += L"\\" + part.wstring();
@@ -159,9 +161,9 @@ void generateFiltersFile(const std::wstring& projectDirectory, const std::wstrin
 		// フィルターの書き込み
 		filtersFile << L"  <ItemGroup>\n";
 		for (const auto& [filter, parentFilter] : filterHierarchy) {
-			filtersFile << L"    <Filter Include=\"" << xmlEscape(filter) << L"\">\n";
+			filtersFile << L"    <Filter Include=\"" << filter << L"\">\n";
 			if (!parentFilter.empty()) {
-				filtersFile << L"      <Filter>" << xmlEscape(parentFilter) << L"</Filter>\n";
+				filtersFile << L"      <Filter>" << parentFilter << L"</Filter>\n";
 			}
 			filtersFile << L"      <UniqueIdentifier>{" << generateGuid() << L"}</UniqueIdentifier>\n";
 			filtersFile << L"    </Filter>\n";
@@ -171,8 +173,11 @@ void generateFiltersFile(const std::wstring& projectDirectory, const std::wstrin
 		// ファイルの書き込み
 		filtersFile << L"  <ItemGroup>\n";
 		for (const auto& file : files) {
-			fs::path filePath(file.name);
-			std::wstring ext = filePath.extension().wstring();
+			std::wstring filePath = file.name;
+			std::replace(filePath.begin(), filePath.end(), L'/', L'\\');  // '/' を '\' に置換
+
+			fs::path fsFilePath(filePath);
+			std::wstring ext = fsFilePath.extension().wstring();
 			std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
 			std::wstring itemType;
@@ -186,11 +191,13 @@ void generateFiltersFile(const std::wstring& projectDirectory, const std::wstrin
 				itemType = L"None";
 			}
 
-			std::wstring escapedFilePath = xmlEscape(file.name);
-			filtersFile << L"    <" << itemType << L" Include=\"" << escapedFilePath << L"\">\n";
-			if (!filePath.parent_path().empty()) {
-				filtersFile << L"      <Filter>" << xmlEscape(filePath.parent_path().wstring()) << L"</Filter>\n";
+			filtersFile << L"    <" << itemType << L" Include=\"" << filePath << L"\">\n";
+
+			std::wstring filterPath = fsFilePath.parent_path().wstring();
+			if (!filterPath.empty()) {
+				filtersFile << L"      <Filter>" << filterPath << L"</Filter>\n";
 			}
+
 			filtersFile << L"    </" << itemType << L">\n";
 		}
 		filtersFile << L"  </ItemGroup>\n";
@@ -629,7 +636,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 				auto files = getProjectFiles(directoryPath);
 				try {
 					generateFiltersFile(directoryPath, projectName, files);
-					updateProjectFile(directoryPath, projectName, files);
+					//updateProjectFile(directoryPath, projectName, files);
 					SetWindowText(hWndStatusText, L"Filters generated and project file updated successfully.");
 				}
 				catch (const std::exception& e) {
