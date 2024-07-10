@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Common/Private/Delegate">
+      <UniqueIdentifier>{AB064B1B-4B9F-4857-832C-D8434A738969}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Common/Public/Container">
+      <UniqueIdentifier>{2AA95F4F-2C55-4006-AD08-A8B97DA27B15}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Common/Public/Definition">
+      <UniqueIdentifier>{17EDFCF1-842B-4D62-8DF1-36F889B8AE7A}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Common/Public/Delegate">
+      <UniqueIdentifier>{CD8B7258-5374-472C-B82F-2180895B9395}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ObjectCore/Private/Class">
+      <UniqueIdentifier>{DACE8636-97EA-4421-82A1-80D8A5B399F9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ObjectCore/Private/ObjectInterface">
+      <UniqueIdentifier>{60BA17F6-32FF-4EAA-9B3B-0535CDA4239F}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ObjectCore/Public/Class">
+      <UniqueIdentifier>{D266B566-44FB-49DB-9284-AE9B99E513B0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ObjectCore/Public/ObjectInterface">
+      <UniqueIdentifier>{E1879BB9-9B8C-49A1-A3E9-BAFB454DFFA5}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Common/Private/Delegate/Delegate.cpp">
+      <Filter>Common/Private/Delegate</Filter>
+    </ClCompile>
+    <ClInclude Include="Common/Public/Container/ContainerTypes.h">
+      <Filter>Common/Public/Container</Filter>
+    </ClInclude>
+    <ClInclude Include="Common/Public/Definition/CommonDefine - 
